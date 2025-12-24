@@ -5,7 +5,15 @@ const Case = require("../models/Case");
 // CREATE a case
 router.post("/", async (req, res) => {
   try {
-    const newCase = await Case.create(req.body);
+    const newCase = await Case.create({
+  ...req.body,
+  statusHistory: [
+    {
+      status: "Pending",
+    },
+  ],
+});
+
     res.status(201).json(newCase);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -13,19 +21,72 @@ router.post("/", async (req, res) => {
 });
 
 // GET all cases
+// GET cases with search & filters
 router.get("/", async (req, res) => {
-  const cases = await Case.find();
-  res.json(cases);
+  try {
+    const { search, status, law, fromDate, toDate, slaBreached } = req.query;
+
+    let query = {};
+
+    // Search by title
+    if (search) {
+      query.title = { $regex: search, $options: "i" };
+    }
+
+    // Filter by status
+    if (status) {
+      query.status = status;
+    }
+
+    // Filter by law section
+    if (law) {
+      query.lawSection = law;
+    }
+
+    // Date range filter
+    if (fromDate || toDate) {
+      query.createdAt = {};
+      if (fromDate) query.createdAt.$gte = new Date(fromDate);
+      if (toDate) query.createdAt.$lte = new Date(toDate);
+    }
+
+    // SLA breached (> 7 days)
+    if (slaBreached === "true") {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+      query.status = "Solved";
+      query.solvedAt = { $lt: sevenDaysAgo };
+    }
+
+    const cases = await Case.find(query).sort({ createdAt: -1 });
+    res.json(cases);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
+
+
 // UPDATE case status
-router.put("/:id", async (req, res) => {
+const auth = require("../middleware/auth");
+router.put("/:id", auth, async (req, res) => {
+  if (req.user.role !== "official") {
+    return res.status(403).json({ message: "Access denied" });
+  }
   try {
     const { status } = req.body;
 
-    const updateData = { status };
+    const updateData = {
+      status,
+      $push: {
+        statusHistory: {
+          status,
+          changedAt: new Date(),
+        },
+      },
+    };
 
-    // auto set solved time
     if (status === "Solved") {
       updateData.solvedAt = new Date();
     }
@@ -41,6 +102,7 @@ router.put("/:id", async (req, res) => {
     res.status(400).json({ error: error.message });
   }
 });
+
 
 // DASHBOARD stats
 router.get("/stats/summary", async (req, res) => {

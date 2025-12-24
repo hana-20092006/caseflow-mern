@@ -29,10 +29,24 @@ const caseSchema = new mongoose.Schema(
     solvedAt: {
       type: Date,
     },
+    statusHistory: [
+  {
+    status: {
+      type: String,
+      enum: ["Pending", "In Progress", "Solved"],
+    },
+    changedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+],
+
   },
   {
     timestamps: true,
   }
+  
 );
 
 module.exports = mongoose.model("Case", caseSchema);
